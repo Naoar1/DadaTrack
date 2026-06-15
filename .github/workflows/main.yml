@@ -1,0 +1,49 @@
+name: dada-news-to-telegram
+
+# 免伺服器排程：每 30 分鐘檢查一次新公告。
+# 用法：
+#   1. 在 GitHub 建一個 repo，把 dada_news_to_telegram.py 放根目錄，
+#      本檔放在 .github/workflows/dada-news.yml
+#   2. repo 的 Settings → Secrets and variables → Actions 新增兩個 secret：
+#      TG_BOT_TOKEN、TG_CHAT_ID
+#   3. 首次會自動建立 seen_news.json 當基準（不洗版），之後只推送新公告。
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # 每 30 分鐘（UTC，但對本用途沒差）
+  workflow_dispatch:          # 也可在 Actions 頁面手動觸發
+
+permissions:
+  contents: write             # 允許把 seen_news.json 寫回 repo
+
+concurrency:
+  group: dada-news
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run monitor
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python3 main.py
+
+      - name: Persist state
+        run: |
+          if [[ -n "$(git status --porcelain seen_news.json)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add seen_news.json
+            git commit -m "chore: update seen_news state"
+            git push
+          else
+            echo "No state change."
+          fi
